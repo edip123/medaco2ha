@@ -29,9 +29,13 @@ def to_hourly_rows(
     """Group intervals by UTC hour and accumulate a running sum.
 
     Only hours strictly after ``after`` (the start of the last imported
-    hour) are returned, so repeated imports never double count. Hours are
-    only emitted once complete, i.e. once all four 15 minute slots arrived,
-    unless the data uses a coarser resolution.
+    hour) are returned, so repeated imports never double count.
+
+    The newest hour is held back while it is incomplete (fewer than four
+    15 minute slots), because importing it too low would never be fixed.
+    Any other incomplete hour is imported with the values that exist: the
+    first hour after a meter was installed usually starts mid-hour, and a
+    gap in the middle must not stop the import of everything after it.
     """
     buckets: dict[datetime, list[float]] = {}
     for interval in intervals:
@@ -42,12 +46,13 @@ def to_hourly_rows(
             continue
         buckets.setdefault(hour, []).append(interval.kwh)
 
+    hours = sorted(buckets)
     rows: list[HourRow] = []
     running = last_sum
-    for hour in sorted(buckets):
+    for hour in hours:
         values = buckets[hour]
-        # A partial trailing hour would be imported too low and never fixed.
-        if len(values) not in (1, 4):
+        if hour == hours[-1] and len(values) not in (1, 4):
+            # Partial trailing hour: wait until the remaining slots arrive.
             break
         energy = round(sum(values), 6)
         running = round(running + energy, 6)

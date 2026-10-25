@@ -11,7 +11,9 @@
       },
       "reauth_confirm": {
         "title": "Erneut anmelden",
-        "data": { "password": "Passwort" }
+        "data": {
+          "password": "Passwort"
+        }
       }
     },
     "error": {
@@ -28,6 +30,21 @@
       "options": {
         "westnetz": "Westnetz (medaco.westnetz.de)",
         "westenergie": "Westenergie Metering (medaco.westenergie.de)"
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "MeDaCo-Optionen",
+        "data": {
+          "include_provisional": "Vorläufige Werte importieren",
+          "reimport_days": "Die letzten N Tage bei jedem Lauf neu einlesen"
+        },
+        "data_description": {
+          "include_provisional": "Das Portal füllt den laufenden Tag mit Schätzwerten (Status „v“), bis das Gateway übertragen hat, meist am Folgetag. Aus: auf gemessene Werte warten. An: Schätzwerte sofort übernehmen, das Neueinlesen unten korrigiert sie später.",
+          "reimport_days": "Diese Tage bei jedem Lauf erneut abrufen, damit Korrekturen des Portals in der Statistik landen. 0 schaltet das ab."
+        }
       }
     }
   }

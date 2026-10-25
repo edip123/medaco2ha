@@ -53,8 +53,23 @@ def test_parse_series_uses_interval_start():
         "unit": "kWh",
     }
     assert api.parse_series(data) == [
-        api.Interval(datetime(2026, 7, 31, 22, 0, tzinfo=timezone.utc), 0.259)
+        api.Interval(datetime(2026, 7, 31, 22, 0, tzinfo=timezone.utc), 0.259, "W")
     ]
+
+
+def test_parse_series_keeps_provisional_state():
+    data = {
+        "timestampsLeft": ["2026-07-31T22:00:00+00:00", "2026-07-31T22:15:00+00:00"],
+        "values": [0.1, 0.2],
+        "states": ["E", "v"],
+        "unit": "kWh",
+    }
+    assert [i.state for i in api.parse_series(data)] == ["E", "v"]
+
+
+def test_parse_series_without_states():
+    data = {"timestampsLeft": ["2026-07-31T22:00:00+00:00"], "values": [0.1], "unit": "kWh"}
+    assert api.parse_series(data)[0].state is None
 
 
 def test_format_portal_time_matches_browser():

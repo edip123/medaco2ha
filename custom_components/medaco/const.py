@@ -13,7 +13,20 @@ PORTALS = {
 }
 DEFAULT_PORTAL = "westnetz"
 
-# Smart meter gateways deliver 15 minute values to the portal within minutes.
+# Options (Settings → Devices & services → MeDaCo → Configure).
+# Import values the portal still marks as provisional (state "v")? Those are
+# profile estimates for the current day that get replaced by measured values
+# once the gateway has transmitted, usually the next day.
+CONF_INCLUDE_PROVISIONAL = "include_provisional"
+DEFAULT_INCLUDE_PROVISIONAL = False
+# Re-import the last N days on every run so late corrections (substitute
+# values, provisional values turning final) end up in the statistics.
+CONF_REIMPORT_DAYS = "reimport_days"
+DEFAULT_REIMPORT_DAYS = 2
+MAX_REIMPORT_DAYS = 30
+
+# Poll interval. The gateway usually transmits once a day, so this mainly
+# catches the moment the new day's values appear.
 UPDATE_INTERVAL = timedelta(minutes=15)
 
 # How far back to fetch on the very first import, and the size of each
@@ -29,3 +42,8 @@ OBIS_NAMES = {
     OBIS_CONSUMPTION: "Bezug",
     OBIS_FEED_IN: "Einspeisung",
 }
+
+# Value states the portal reports alongside each interval.
+STATE_MEASURED = "W"  # gemessen
+STATE_SUBSTITUTE = "E"  # Ersatzwert des Messstellenbetreibers
+STATE_PROVISIONAL = "v"  # vorläufig: Schätzung, bis der Zähler übertragen hat

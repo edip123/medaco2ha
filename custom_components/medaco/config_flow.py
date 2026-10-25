@@ -7,13 +7,35 @@ from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigFlow, ConfigFlowResult
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlow,
+    ConfigFlowResult,
+    OptionsFlow,
+)
 from homeassistant.const import CONF_PASSWORD, CONF_USERNAME
+from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_create_clientsession
-from homeassistant.helpers.selector import SelectSelector, SelectSelectorConfig
+from homeassistant.helpers.selector import (
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
+    SelectSelector,
+    SelectSelectorConfig,
+)
 
 from .api import MedacoAuthError, MedacoClient, MedacoError
-from .const import CONF_PORTAL, DEFAULT_PORTAL, DOMAIN, PORTALS
+from .const import (
+    CONF_INCLUDE_PROVISIONAL,
+    CONF_PORTAL,
+    CONF_REIMPORT_DAYS,
+    DEFAULT_INCLUDE_PROVISIONAL,
+    DEFAULT_PORTAL,
+    DEFAULT_REIMPORT_DAYS,
+    DOMAIN,
+    MAX_REIMPORT_DAYS,
+    PORTALS,
+)
 
 USER_SCHEMA = vol.Schema(
     {
@@ -30,6 +52,12 @@ class MedacoConfigFlow(ConfigFlow, domain=DOMAIN):
     """Ask for portal credentials and verify them."""
 
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> MedacoOptionsFlow:
+        """Return the options flow."""
+        return MedacoOptionsFlow()
 
     async def _validate(self, data: Mapping[str, Any]) -> str | None:
         client = MedacoClient(
@@ -83,3 +111,34 @@ class MedacoConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=vol.Schema({vol.Required(CONF_PASSWORD): str}),
             errors=errors,
         )
+
+
+class MedacoOptionsFlow(OptionsFlow):
+    """Let the user decide how provisional values and corrections are handled."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        if user_input is not None:
+            user_input[CONF_REIMPORT_DAYS] = int(user_input[CONF_REIMPORT_DAYS])
+            return self.async_create_entry(data=user_input)
+        options = self.config_entry.options
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_INCLUDE_PROVISIONAL,
+                    default=options.get(
+                        CONF_INCLUDE_PROVISIONAL, DEFAULT_INCLUDE_PROVISIONAL
+                    ),
+                ): bool,
+                vol.Required(
+                    CONF_REIMPORT_DAYS,
+                    default=options.get(CONF_REIMPORT_DAYS, DEFAULT_REIMPORT_DAYS),
+                ): NumberSelector(
+                    NumberSelectorConfig(
+                        min=0, max=MAX_REIMPORT_DAYS, step=1, mode=NumberSelectorMode.BOX
+                    )
+                ),
+            }
+        )
+        return self.async_show_form(step_id="init", data_schema=schema)

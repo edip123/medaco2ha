@@ -72,6 +72,9 @@ class Interval:
 
     start: datetime  # timezone aware, UTC
     kwh: float
+    # Portal state of the value: "W" measured, "E" substitute value,
+    # "v" provisional (estimate for the current day), None if unknown.
+    state: str | None = None
 
 
 def parse_metering_points(tree: Any) -> list[MeteringPoint]:
@@ -105,11 +108,15 @@ def parse_series(data: dict[str, Any]) -> list[Interval]:
     if unit not in ("kWh", "Wh"):
         raise MedacoConnectionError(f"Unexpected unit {unit!r}")
     factor = 0.001 if unit == "Wh" else 1.0
+    timestamps, values = data["timestampsLeft"], data["values"]
+    states = data.get("states") or []
     return [
         Interval(
-            datetime.fromisoformat(ts).astimezone(timezone.utc), value * factor
+            datetime.fromisoformat(ts).astimezone(timezone.utc),
+            value * factor,
+            states[i] if i < len(states) else None,
         )
-        for ts, value in zip(data["timestampsLeft"], data["values"], strict=True)
+        for i, (ts, value) in enumerate(zip(timestamps, values, strict=True))
         if value is not None
     ]
 

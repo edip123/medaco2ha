@@ -14,6 +14,7 @@ from homeassistant.components.recorder.models import (
 from homeassistant.components.recorder.statistics import (
     async_add_external_statistics,
     get_last_statistics,
+    statistics_during_period,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import UnitOfEnergy
@@ -28,10 +29,16 @@ from homeassistant.util import dt as dt_util
 from .aggregate import to_hourly_rows
 from .api import Interval, Line, MedacoAuthError, MedacoClient, MedacoError, MeteringPoint
 from .const import (
+    CONF_INCLUDE_PROVISIONAL,
+    CONF_REIMPORT_DAYS,
+    DEFAULT_INCLUDE_PROVISIONAL,
+    DEFAULT_REIMPORT_DAYS,
     DOMAIN,
     FETCH_CHUNK,
     INITIAL_HISTORY,
+    MAX_REIMPORT_DAYS,
     OBIS_NAMES,
+    STATE_PROVISIONAL,
     UPDATE_INTERVAL,
 )
 
@@ -93,11 +100,31 @@ class MedacoCoordinator(DataUpdateCoordinator[dict[str, RegisterState]]):
         )
         self.client = client
 
+    @property
+    def include_provisional(self) -> bool:
+        """Import values the portal still marks as provisional?"""
+        return self.config_entry.options.get(
+            CONF_INCLUDE_PROVISIONAL, DEFAULT_INCLUDE_PROVISIONAL
+        )
+
+    @property
+    def reimport_days(self) -> int:
+        """How many recent days to fetch again on every run."""
+        return int(
+            self.config_entry.options.get(CONF_REIMPORT_DAYS, DEFAULT_REIMPORT_DAYS)
+        )
+
     async def _async_update_data(self) -> dict[str, RegisterState]:
         try:
             points = await self.client.get_metering_points()
             states: dict[str, RegisterState] = {}
             for point in points:
+                _LOGGER.debug(
+                    "Zählpunkt %s (%s): Messreihen %s",
+                    point.name,
+                    point.id,
+                    [(line.obis, line.id, line.name) for line in point.lines],
+                )
                 for line in point.lines:
                     state = await self._import_line(point, line)
                     states[state.statistic_id] = state
@@ -119,7 +146,17 @@ class MedacoCoordinator(DataUpdateCoordinator[dict[str, RegisterState]]):
             row = last[statistic_id][0]
             last_hour = datetime.fromtimestamp(row["start"], tz=timezone.utc)
             last_sum = row["sum"] or 0.0
+            state.last_hour, state.total_kwh = last_hour, last_sum
             start = last_hour + timedelta(hours=1)
+            # Fetch the last days again so corrections by the portal
+            # (provisional values turning final, substitute values) land in
+            # the statistics. Existing hours are overwritten on import.
+            window_start = (now - timedelta(days=self.reimport_days)).replace(
+                minute=0, second=0, microsecond=0
+            )
+            if self.reimport_days and window_start < start:
+                start = window_start
+                last_hour, last_sum = await self._sum_before(statistic_id, start)
         else:
             last_hour = None
             last_sum = 0.0
@@ -127,7 +164,6 @@ class MedacoCoordinator(DataUpdateCoordinator[dict[str, RegisterState]]):
                 minute=0, second=0, microsecond=0
             )
 
-        state.last_hour, state.total_kwh = last_hour, last_sum
         if start >= now:
             return state
 
@@ -139,7 +175,18 @@ class MedacoCoordinator(DataUpdateCoordinator[dict[str, RegisterState]]):
                 point.id, line.id, chunk_start, chunk_end
             )
             chunk_start = chunk_end
+        fetched = len(intervals)
+        if not self.include_provisional:
+            intervals = [i for i in intervals if i.state != STATE_PROVISIONAL]
         rows = to_hourly_rows(intervals, last_sum=last_sum, after=last_hour)
+        _LOGGER.debug(
+            "%s: %d Intervalle ab %s geholt, %d vorläufige verworfen, %d Stunden importiert",
+            statistic_id,
+            fetched,
+            start.isoformat(timespec="minutes"),
+            fetched - len(intervals),
+            len(rows),
+        )
         if not rows:
             return state
 
@@ -149,6 +196,29 @@ class MedacoCoordinator(DataUpdateCoordinator[dict[str, RegisterState]]):
             _metadata(statistic_id, name),
             [StatisticData(start=r.start, state=r.state, sum=r.sum) for r in rows],
         )
-        _LOGGER.debug("Imported %d hours for %s", len(rows), statistic_id)
         state.last_hour, state.total_kwh = rows[-1].start, rows[-1].sum
         return state
+
+    async def _sum_before(
+        self, statistic_id: str, start: datetime
+    ) -> tuple[datetime | None, float]:
+        """Return start and running sum of the newest statistics row before ``start``."""
+
+        def _query() -> dict:
+            return statistics_during_period(
+                self.hass,
+                start - timedelta(days=MAX_REIMPORT_DAYS + 7),
+                start,
+                {statistic_id},
+                "hour",
+                None,
+                {"sum"},
+            )
+
+        rows = (await get_instance(self.hass).async_add_executor_job(_query)).get(
+            statistic_id, []
+        )
+        if not rows:
+            return None, 0.0
+        row = rows[-1]
+        return datetime.fromtimestamp(row["start"], tz=timezone.utc), row["sum"] or 0.0

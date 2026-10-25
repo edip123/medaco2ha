@@ -11,7 +11,9 @@
       },
       "reauth_confirm": {
         "title": "Log in again",
-        "data": { "password": "Password" }
+        "data": {
+          "password": "Password"
+        }
       }
     },
     "error": {
@@ -28,6 +30,21 @@
       "options": {
         "westnetz": "Westnetz (medaco.westnetz.de)",
         "westenergie": "Westenergie Metering (medaco.westenergie.de)"
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "MeDaCo options",
+        "data": {
+          "include_provisional": "Import provisional values",
+          "reimport_days": "Re-import the last N days on every run"
+        },
+        "data_description": {
+          "include_provisional": "The portal fills the current day with estimates (state 'v') until the gateway has transmitted, usually the next day. Off: wait for measured values. On: import the estimates right away; the re-import below corrects them later.",
+          "reimport_days": "Fetch these days again on every run so corrections by the portal end up in the statistics. 0 disables it."
+        }
       }
     }
   }
